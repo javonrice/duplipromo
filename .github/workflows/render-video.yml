@@ -65,39 +65,34 @@ jobs:
 
       - name: Post Psychology download link
         if: ${{ github.event.inputs.composition != 'DupliPromo' }}
+        continue-on-error: true
         run: |
           echo "## 🎬 Dupli Psychology Video" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           RESPONSE=$(curl -s --max-time 60 -F "file=@video/out/dupli-psychology.mp4" https://file.io/?expires=14d)
-          echo "file.io response: $RESPONSE"
-          LINK=$(echo "$RESPONSE" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    print(d.get('link') or d.get('url') or 'Upload failed - check artifact instead')
-except Exception as e:
-    print(f'Parse error: {e}')
-" 2>&1)
-          echo "**Download link:**" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "$LINK" >> $GITHUB_STEP_SUMMARY
-          echo "📲 DOWNLOAD: $LINK"
+          echo "Raw response: $RESPONSE"
+          LINK=$(echo "$RESPONSE" | jq -r '.link // .url // empty' 2>/dev/null)
+          if [ -z "$LINK" ]; then
+            echo "⚠️ file.io upload failed — download the MP4 from the Artifacts section below." >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ No link — use artifact instead"
+          else
+            echo "[$LINK]($LINK)" >> $GITHUB_STEP_SUMMARY
+            echo "📲 DOWNLOAD: $LINK"
+          fi
 
       - name: Post Promo download link
         if: ${{ github.event.inputs.composition == 'DupliPromo' || github.event.inputs.composition == 'both' }}
+        continue-on-error: true
         run: |
           echo "## 🎬 Dupli Promo Video" >> $GITHUB_STEP_SUMMARY
           RESPONSE=$(curl -s --max-time 60 -F "file=@video/out/dupli-promo.mp4" https://file.io/?expires=14d)
-          LINK=$(echo "$RESPONSE" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    print(d.get('link') or d.get('url') or 'Upload failed - check artifact instead')
-except Exception as e:
-    print(f'Parse error: {e}')
-" 2>&1)
-          echo "$LINK" >> $GITHUB_STEP_SUMMARY
-          echo "📲 PROMO DOWNLOAD: $LINK"
+          LINK=$(echo "$RESPONSE" | jq -r '.link // .url // empty' 2>/dev/null)
+          if [ -z "$LINK" ]; then
+            echo "⚠️ Use artifact instead." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "[$LINK]($LINK)" >> $GITHUB_STEP_SUMMARY
+            echo "📲 PROMO DOWNLOAD: $LINK"
+          fi
 
       - name: Upload artifacts
         if: always()
