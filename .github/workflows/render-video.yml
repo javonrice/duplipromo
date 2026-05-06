@@ -1,4 +1,4 @@
-name: Render Dupli Promo Video
+name: Render Dupli Videos
 
 on:
   push:
@@ -6,12 +6,25 @@ on:
       - claude/add-remotion-claude-skills-AR7Ve
       - main
   workflow_dispatch:
+    inputs:
+      composition:
+        description: 'Which composition to render'
+        required: false
+        default: 'DupliPsychology'
+        type: choice
+        options:
+          - DupliPsychology
+          - DupliPromo
+          - both
 
 jobs:
   render:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -25,28 +38,49 @@ jobs:
         working-directory: video
         run: npm ci
 
-      - name: Render video
+      - name: Generate voiceover (Psychology video)
+        if: ${{ github.event.inputs.composition != 'DupliPromo' }}
+        working-directory: video
+        run: node scripts/generate-voiceover-psychology.mjs
+
+      - name: Render DupliPsychology
+        if: ${{ github.event.inputs.composition != 'DupliPromo' }}
+        working-directory: video
+        run: npx remotion render DupliPsychology out/dupli-psychology.mp4
+
+      - name: Render DupliPromo
+        if: ${{ github.event.inputs.composition == 'DupliPromo' || github.event.inputs.composition == 'both' }}
         working-directory: video
         run: npx remotion render DupliPromo out/dupli-promo.mp4
 
-      - name: Upload to file.io and print download link
+      - name: Upload Psychology video and post link
+        if: ${{ github.event.inputs.composition != 'DupliPromo' }}
         run: |
-          echo "## 🎬 Dupli Promo Video" >> $GITHUB_STEP_SUMMARY
+          echo "## 🎬 Dupli Psychology Video" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          RESPONSE=$(curl -s -F "file=@video/out/dupli-promo.mp4" https://file.io)
+          RESPONSE=$(curl -s -F "file=@video/out/dupli-psychology.mp4" https://file.io)
           LINK=$(echo $RESPONSE | python3 -c "import sys,json; print(json.load(sys.stdin)['link'])")
           echo "**Direct download link (expires in 14 days):**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "[$LINK]($LINK)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Tap the link to download the MP4 to your phone." >> $GITHUB_STEP_SUMMARY
+          echo "📲 Tap the link above to download the MP4 to your phone." >> $GITHUB_STEP_SUMMARY
           echo "---"
-          echo "📲 DOWNLOAD LINK: $LINK"
+          echo "📲 DOWNLOAD: $LINK"
           echo "---"
 
-      - name: Upload artifact (backup)
+      - name: Upload Promo video and post link
+        if: ${{ github.event.inputs.composition == 'DupliPromo' || github.event.inputs.composition == 'both' }}
+        run: |
+          echo "## 🎬 Dupli Promo Video" >> $GITHUB_STEP_SUMMARY
+          RESPONSE=$(curl -s -F "file=@video/out/dupli-promo.mp4" https://file.io)
+          LINK=$(echo $RESPONSE | python3 -c "import sys,json; print(json.load(sys.stdin)['link'])")
+          echo "[$LINK]($LINK)" >> $GITHUB_STEP_SUMMARY
+          echo "📲 PROMO DOWNLOAD: $LINK"
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dupli-promo-video
-          path: video/out/dupli-promo.mp4
+          name: dupli-videos
+          path: video/out/*.mp4
           retention-days: 7
