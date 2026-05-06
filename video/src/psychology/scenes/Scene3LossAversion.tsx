@@ -1,91 +1,119 @@
 import React from "react";
-import {
-  AbsoluteFill, Easing, interpolate, spring, useCurrentFrame, useVideoConfig,
-} from "remotion";
+import { AbsoluteFill, Easing, interpolate, useCurrentFrame, useVideoConfig } from "remotion";
 import { loadFont as loadOutfit } from "@remotion/google-fonts/Outfit";
-import { loadFont as loadFigtree } from "@remotion/google-fonts/Figtree";
-import { P } from "../tokens";
-import { AbstractFace } from "../components/AbstractFace";
+import { BW } from "../tokens";
 
-const { fontFamily: outfit } = loadOutfit("normal", { weights: ["700", "800"], subsets: ["latin"] });
-const { fontFamily: figtree } = loadFigtree("normal", { weights: ["400", "500", "600"], subsets: ["latin"] });
+const { fontFamily: outfit } = loadOutfit("normal", { weights: ["300", "800"], subsets: ["latin"] });
 
-// Thought bubble with text
-const ThoughtBubble: React.FC<{ text: string; delay: number; dismissAt: number }> = ({
-  text, delay, dismissAt,
-}) => {
-  const frame = useCurrentFrame();
-  const appear = interpolate(frame, [delay, delay + 15], [0, 1], {
+// Full-screen stick figure — white lines on black
+// Phases: 0=stressed, 1=relieved
+const StickFigure: React.FC<{ frame: number; fps: number }> = ({ frame, fps }) => {
+  const cx = 540;
+  const headY = 480;
+  const headR = 80;
+  const neckY = headY + headR;
+  const shoulderY = neckY + 80;
+  const hipY = shoulderY + 320;
+  const footY = hipY + 340;
+
+  // Phase transition at frame 130
+  const phase = interpolate(frame, [120, 160], [0, 1], {
     extrapolateLeft: "clamp", extrapolateRight: "clamp",
     easing: Easing.bezier(0.16, 1, 0.3, 1),
   });
-  const dismiss = interpolate(frame, [dismissAt, dismissAt + 12], [1, 0], {
-    extrapolateLeft: "clamp", extrapolateRight: "clamp",
-  });
-  const opacity = Math.min(appear, dismiss);
-  const scale = interpolate(frame, [delay, delay + 12], [0.85, 1], {
-    extrapolateLeft: "clamp", extrapolateRight: "clamp",
-    easing: Easing.bezier(0.34, 1.56, 0.64, 1),
-  });
+
+  // Arms: stressed = raised-tense (up-wide), relieved = down-relaxed
+  const leftArmX2 = cx - 200 + phase * (-20); // stressed: wide out, relieved: closer in
+  const leftArmY2 = shoulderY + 120 - phase * 60; // stressed: up-tense, relieved: lower
+  const rightArmX2 = cx + 200 - phase * 20;
+  const rightArmY2 = shoulderY + 120 - phase * 60;
+
+  // Stress shake — small horizontal tremor when stressed
+  const shake = (1 - phase) * 8 * Math.sin(frame * 1.5);
+
+  // Money bag position — hangs from left hand
+  const bagX = leftArmX2 + shake;
+  const bagY = leftArmY2 + 60;
+  const bagOpacity = interpolate(frame, [0, 20], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+
+  // Stress lines radiate from figure when stressed
+  const stressOp = 1 - phase;
+
+  // Mouth curve: frown when stressed → smile when relieved
+  const mouthCurve = -25 + phase * 50; // -25 = frown, +25 = smile
+
+  // $48 label on bag fades out, $12 fades in
+  const bag48Op = 1 - phase;
+  const bag12Op = phase;
+
+  const sw = BW.stroke;
 
   return (
-    <div
-      style={{
-        opacity,
-        transform: `scale(${scale})`,
-        background: P.redLight,
-        border: `1.5px solid ${P.red}30`,
-        borderRadius: 20,
-        padding: "16px 22px",
-        fontFamily: figtree,
-        fontSize: 28,
-        color: P.red,
-        fontWeight: 600,
-        maxWidth: 480,
-        textAlign: "center",
-        position: "relative",
-      }}
-    >
-      {text}
-      {/* Tail */}
-      <div style={{
-        position: "absolute", bottom: -14, left: "50%",
-        transform: "translateX(-50%)",
-        width: 0, height: 0,
-        borderLeft: "10px solid transparent",
-        borderRight: "10px solid transparent",
-        borderTop: `14px solid ${P.red}30`,
-      }} />
-    </div>
-  );
-};
+    <svg width={1080} height={1920} viewBox="0 0 1080 1920" style={{ position: "absolute", inset: 0 }}>
+      {/* Stress radiating lines */}
+      {[0, 45, 90, 135, 225, 270, 315].map((deg, i) => {
+        const rad = (deg * Math.PI) / 180;
+        const r1 = 120, r2 = 180;
+        return (
+          <line key={i}
+            x1={cx + r1 * Math.cos(rad)} y1={headY + r1 * Math.sin(rad)}
+            x2={cx + r2 * Math.cos(rad)} y2={headY + r2 * Math.sin(rad)}
+            stroke={BW.fg} strokeWidth="2" strokeLinecap="round"
+            opacity={stressOp * 0.5}
+          />
+        );
+      })}
 
-// Shield / checkmark reveal
-const Shield: React.FC<{ delay: number }> = ({ delay }) => {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const scale = spring({
-    frame: frame - delay, fps,
-    config: { damping: 11, stiffness: 220, mass: 0.5 },
-    from: 0, to: 1,
-  });
-  const opacity = interpolate(frame, [delay, delay + 8], [0, 1], {
-    extrapolateLeft: "clamp", extrapolateRight: "clamp",
-  });
-  return (
-    <div
-      style={{
-        opacity, transform: `scale(${scale})`,
-        width: 72, height: 72,
-        background: P.greenLight,
-        border: `2px solid ${P.green}40`,
-        borderRadius: 20,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 36,
-      }}
-    >
-      🛡️
-    </div>
+      {/* Head */}
+      <circle cx={cx + shake * 0.3} cy={headY} r={headR} stroke={BW.fg} strokeWidth={sw} fill="none" />
+
+      {/* Eyes */}
+      <circle cx={cx - 28 + shake * 0.3} cy={headY - 15} r={8} fill={BW.fg} />
+      <circle cx={cx + 28 + shake * 0.3} cy={headY - 15} r={8} fill={BW.fg} />
+
+      {/* Mouth — curved based on phase */}
+      <path
+        d={`M ${cx - 35 + shake * 0.3} ${headY + 25} Q ${cx + shake * 0.3} ${headY + 25 + mouthCurve} ${cx + 35 + shake * 0.3} ${headY + 25}`}
+        stroke={BW.fg} strokeWidth={sw} fill="none" strokeLinecap="round"
+      />
+
+      {/* Neck + body */}
+      <line x1={cx + shake * 0.2} y1={neckY} x2={cx + shake * 0.1} y2={hipY}
+        stroke={BW.fg} strokeWidth={sw} strokeLinecap="round" />
+
+      {/* Left arm */}
+      <line x1={cx + shake * 0.1} y1={shoulderY} x2={leftArmX2 + shake} y2={leftArmY2}
+        stroke={BW.fg} strokeWidth={sw} strokeLinecap="round" />
+      {/* Right arm */}
+      <line x1={cx + shake * 0.1} y1={shoulderY} x2={rightArmX2 + shake} y2={rightArmY2}
+        stroke={BW.fg} strokeWidth={sw} strokeLinecap="round" />
+
+      {/* Legs */}
+      <line x1={cx} y1={hipY} x2={cx - 160} y2={footY} stroke={BW.fg} strokeWidth={sw} strokeLinecap="round" />
+      <line x1={cx} y1={hipY} x2={cx + 160} y2={footY} stroke={BW.fg} strokeWidth={sw} strokeLinecap="round" />
+
+      {/* Money bag */}
+      <g opacity={bagOpacity}>
+        <circle cx={bagX} cy={bagY} r={55} stroke={BW.fg} strokeWidth="2.5" fill="none" />
+        <text x={bagX} y={bagY - 8} textAnchor="middle"
+          fontFamily={outfit} fontSize="32" fontWeight="800" fill={BW.fg}
+          opacity={bag48Op}>$48</text>
+        <text x={bagX} y={bagY - 8} textAnchor="middle"
+          fontFamily={outfit} fontSize="32" fontWeight="800" fill={BW.fg}
+          opacity={bag12Op}>$12</text>
+        {/* Bag knot */}
+        <line x1={bagX} y1={bagY - 55} x2={leftArmX2 + shake} y2={leftArmY2}
+          stroke={BW.fg} strokeWidth="2" strokeLinecap="round" strokeDasharray="6 4" />
+      </g>
+
+      {/* Relief checkmark when relaxed */}
+      <g opacity={phase}>
+        <path d={`M ${cx + 180} ${headY - 80} L ${cx + 220} ${headY - 30} L ${cx + 300} ${headY - 140}`}
+          stroke={BW.fg} strokeWidth="4" fill="none" strokeLinecap="round" strokeLinejoin="round"
+          strokeDasharray="200" strokeDashoffset={200 * (1 - phase)}
+        />
+      </g>
+    </svg>
   );
 };
 
@@ -93,147 +121,35 @@ export const Scene3LossAversion: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
-  const labelOpacity = interpolate(frame, [0, 15], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
-  const labelY = interpolate(frame, [0, 18], [24, 0], {
-    extrapolateLeft: "clamp", extrapolateRight: "clamp",
-    easing: Easing.bezier(0.16, 1, 0.3, 1),
-  });
-
-  // Face transitions: stressed (20) → relieved (120)
-  const faceExpression = frame < 120 ? "stressed" : "relieved";
-  const faceTransFrom = frame >= 120 ? "stressed" : undefined;
-
-  // Expensive product stress indicators pulse
-  const stressPulse = interpolate(
-    (frame - 20) % 40,
-    [0, 20, 40],
-    [1, 1.05, 1],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
-  );
-  const stressVisible = frame > 20 && frame < 115;
-
-  // Dupe slides in at frame 110
-  const dupeSlide = interpolate(frame, [110, 130], [60, 0], {
-    extrapolateLeft: "clamp", extrapolateRight: "clamp",
-    easing: Easing.bezier(0.16, 1, 0.3, 1),
-  });
-  const dupeOpacity = interpolate(frame, [110, 126], [0, 1], {
-    extrapolateLeft: "clamp", extrapolateRight: "clamp",
-  });
-
-  // Insight card
-  const insightOpacity = interpolate(frame, [175, 190], [0, 1], {
-    extrapolateLeft: "clamp", extrapolateRight: "clamp",
-  });
-  const insightScale = spring({
-    frame: frame - 175, fps,
-    config: { damping: 14, stiffness: 180, mass: 0.6 },
-    from: 0.85, to: 1,
-  });
+  const label1Op = interpolate(frame, [0, 18], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const label2Op = interpolate(frame, [140, 160], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
 
   return (
-    <AbsoluteFill
-      style={{
-        background: P.bg,
-        display: "flex",
-        flexDirection: "column",
-        padding: "80px 64px",
-        gap: 28,
-      }}
-    >
-      {/* Label */}
-      <div style={{ opacity: labelOpacity, transform: `translateY(${labelY}px)`, display: "flex", alignItems: "center", gap: 14 }}>
-        <div style={{
-          background: P.red, color: "#fff", fontFamily: outfit, fontSize: 26,
-          fontWeight: 700, padding: "8px 18px", borderRadius: 100,
-        }}>2</div>
-        <span style={{ fontFamily: outfit, fontSize: 44, fontWeight: 800, color: P.text, letterSpacing: "-0.03em" }}>
-          Loss aversion
-        </span>
-      </div>
+    <AbsoluteFill style={{ background: BW.bg }}>
+      <StickFigure frame={frame} fps={fps} />
 
+      {/* Top label */}
       <div style={{
-        opacity: interpolate(frame, [15, 30], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }),
-        fontFamily: figtree, fontSize: 32, color: P.textSub, lineHeight: 1.5,
+        position: "absolute", top: 120, left: 0, right: 0, textAlign: "center",
+        opacity: label1Op,
+        fontFamily: outfit, fontSize: 52, fontWeight: 300,
+        color: BW.fgDim, letterSpacing: "0.08em", textTransform: "uppercase",
       }}>
-        People hate the feeling of{" "}
-        <span style={{ color: P.text, fontWeight: 600 }}>wasting money.</span>
+        loss aversion
       </div>
 
-      {/* Face + products row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 32, marginTop: 8 }}>
-        <AbstractFace
-          expression={faceExpression}
-          transitionFrom={faceTransFrom}
-          transitionStart={120}
-          size={110}
-          color={P.text}
-        />
-
-        {/* Expensive product */}
-        <div
-          style={{
-            transform: stressVisible ? `scale(${stressPulse})` : "scale(1)",
-            background: stressVisible ? P.redLight : P.bgCard,
-            border: `2px solid ${stressVisible ? P.red + "40" : "#eee"}`,
-            borderRadius: 22,
-            padding: "20px 24px",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 8,
-            minWidth: 140,
-          }}
-        >
-          <span style={{ fontSize: 44 }}>🧴</span>
-          <span style={{ fontFamily: outfit, fontSize: 34, fontWeight: 800, color: stressVisible ? P.red : P.textSub, letterSpacing: "-0.02em" }}>$48</span>
-          <span style={{ fontFamily: figtree, fontSize: 22, color: P.textMuted }}>Original</span>
-        </div>
-
-        {/* Thought bubble */}
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 0 }}>
-          <ThoughtBubble text="What if it's not worth it? 😰" delay={30} dismissAt={105} />
-        </div>
-      </div>
-
-      {/* Dupe option slides in */}
-      <div
-        style={{
-          opacity: dupeOpacity,
-          transform: `translateX(${dupeSlide}px)`,
-          display: "flex",
-          alignItems: "center",
-          gap: 20,
-          background: P.greenLight,
-          border: `1.5px solid ${P.green}40`,
-          borderRadius: 22,
-          padding: "20px 28px",
-        }}
-      >
-        <Shield delay={115} />
-        <div>
-          <div style={{ fontFamily: outfit, fontSize: 34, fontWeight: 800, color: P.green, letterSpacing: "-0.02em" }}>
-            $12 dupe
-          </div>
-          <div style={{ fontFamily: figtree, fontSize: 26, color: P.textSub }}>
-            Lower risk. Less regret.
-          </div>
-        </div>
-      </div>
-
-      {/* Insight */}
-      <div
-        style={{
-          opacity: insightOpacity,
-          transform: `scale(${insightScale})`,
-          background: P.redLight,
-          borderRadius: 24,
-          padding: "24px 28px",
-          border: `1.5px solid ${P.red}25`,
-        }}
-      >
-        <div style={{ fontFamily: outfit, fontSize: 32, fontWeight: 700, color: P.red, letterSpacing: "-0.02em" }}>
-          Cheaper = less to lose.
+      {/* Bottom text */}
+      <div style={{
+        position: "absolute", bottom: 180, left: 0, right: 0,
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 20,
+      }}>
+        <div style={{
+          opacity: label2Op,
+          fontFamily: outfit, fontSize: 70, fontWeight: 800,
+          color: BW.fg, letterSpacing: "-0.04em", textAlign: "center",
+          lineHeight: 1.1,
+        }}>
+          cheaper = less<br />to lose
         </div>
       </div>
     </AbsoluteFill>

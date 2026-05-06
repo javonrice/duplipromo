@@ -1,42 +1,23 @@
-// Psychology video design tokens
+// Black & white minimalist design tokens
 
-export const P = {
-  // Background
-  bg: "#F9F8F5",
-  bgCard: "#FFFFFF",
-  bgDark: "#111111",
-
-  // Text
-  text: "#111111",
-  textSub: "#666666",
-  textMuted: "#AAAAAA",
-
-  // Accents
-  purple: "#6C5EF7",
-  purpleLight: "#EEECfe",
-  green: "#3EBF7E",
-  greenLight: "#E6F7EF",
-  red: "#E85D4A",
-  redLight: "#FDECEA",
-  gold: "#F0B429",
-  goldLight: "#FEF7E0",
-
-  // Typography
-  fontDisplay: "'Outfit', sans-serif",
-  fontBody: "'Figtree', sans-serif",
+export const BW = {
+  bg: "#080808",
+  fg: "#F5F5F5",
+  fgDim: "#777777",
+  fgVeryDim: "#333333",
+  stroke: 3,
 };
 
-// Scene durations (frames at 30fps)
 export const PSYCH_SCENES = {
-  hook: 90,            // 3s
-  priceAnchoring: 210, // 7s
-  lossAversion: 240,   // 8s
-  smartShopper: 240,   // 8s
-  reward: 180,         // 6s
-  brand: 210,          // 7s
+  hook: 90,
+  priceAnchoring: 210,
+  lossAversion: 240,
+  smartShopper: 210,
+  reward: 180,
+  brand: 180,
 };
 
-export const PSYCH_TRANSITION = 12;
+export const PSYCH_TRANSITION = 10;
 
 export const PSYCH_TOTAL =
   Object.values(PSYCH_SCENES).reduce((a, b) => a + b, 0) -
