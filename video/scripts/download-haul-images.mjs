@@ -153,28 +153,39 @@ function download(url, dest) {
 // Generate a valid colored JPEG placeholder using ffmpeg (pre-installed on ubuntu-latest).
 // This is critical — Remotion's headless Chrome rejects non-JPEG data in .jpg files.
 function writePlaceholderJpeg(dest, label, bg) {
-  // Strip leading # from hex color for ffmpeg
   const hex = bg.replace(/^#/, "");
-  const r = parseInt(hex.slice(0, 2), 16);
-  const g = parseInt(hex.slice(2, 4), 16);
-  const b = parseInt(hex.slice(4, 6), 16);
 
+  // Try ffmpeg first — ffmpeg color filter uses 0xRRGGBB format
   try {
-    // ffmpeg solid-color JPEG — 640×640, single frame
     execSync(
-      `ffmpeg -y -f lavfi -i "color=c=${r}/${g}/${b}:size=640x640:rate=1" -frames:v 1 -q:v 2 "${dest}"`,
+      `ffmpeg -y -f lavfi -i "color=c=0x${hex}:size=640x640:rate=1" -frames:v 1 -q:v 2 "${dest}"`,
       { stdio: "pipe" }
     );
-    console.log(`  🎨 JPEG placeholder → ${path.basename(dest)} (${label})`);
-  } catch (e) {
-    // Last resort: try ImageMagick
-    try {
-      execSync(`convert -size 640x640 xc:"${bg}" "${dest}"`, { stdio: "pipe" });
-      console.log(`  🎨 ImageMagick placeholder → ${path.basename(dest)}`);
-    } catch {
-      console.error(`  ❌ Could not create placeholder for ${path.basename(dest)}: ${e.message}`);
+    if (fs.existsSync(dest) && fs.statSync(dest).size > 100) {
+      console.log(`  🎨 ffmpeg placeholder → ${path.basename(dest)} (${label})`);
+      return;
     }
-  }
+  } catch { /* fall through */ }
+
+  // Try ImageMagick (magick CLI — newer ubuntu runners)
+  try {
+    execSync(`magick -size 640x640 xc:"#${hex}" "${dest}"`, { stdio: "pipe" });
+    if (fs.existsSync(dest) && fs.statSync(dest).size > 100) {
+      console.log(`  🎨 magick placeholder → ${path.basename(dest)}`);
+      return;
+    }
+  } catch { /* fall through */ }
+
+  // Try legacy ImageMagick convert
+  try {
+    execSync(`convert -size 640x640 xc:"#${hex}" "${dest}"`, { stdio: "pipe" });
+    if (fs.existsSync(dest) && fs.statSync(dest).size > 100) {
+      console.log(`  🎨 convert placeholder → ${path.basename(dest)}`);
+      return;
+    }
+  } catch { /* fall through */ }
+
+  console.error(`  ❌ All placeholder methods failed for ${path.basename(dest)} (${label})`);
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
