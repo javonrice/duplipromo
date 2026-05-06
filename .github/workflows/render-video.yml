@@ -75,6 +75,12 @@ jobs:
             echo "✅ Haul voiceover found"
           fi
 
+      # ── Haul product images ───────────────────────────────────────────────
+      - name: Download haul product images
+        if: ${{ github.event.inputs.composition == 'DollarTreeHaul' || github.event.inputs.composition == 'both' }}
+        working-directory: video
+        run: node scripts/download-haul-images.mjs
+
       # ── Renders ───────────────────────────────────────────────────────────
       - name: Render DupliPsychology
         if: ${{ github.event.inputs.composition == 'DupliPsychology' || github.event.inputs.composition == 'both' || github.event.inputs.composition == '' }}

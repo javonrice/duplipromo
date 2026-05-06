@@ -5,32 +5,28 @@ import { slide } from "@remotion/transitions/slide";
 import { fade } from "@remotion/transitions/fade";
 import { HookScene } from "./scenes/HookScene";
 import { ProductScene } from "./scenes/ProductScene";
-import { DupliSpotlightScene } from "./scenes/DupliSpotlightScene";
-import { QuickFindsScene } from "./scenes/QuickFindsScene";
+import { SavingsScene } from "./scenes/SavingsScene";
 import { CTAScene } from "./scenes/CTAScene";
-import { HAUL_SCENES } from "./tokens";
-import { H } from "./tokens";
-
-const T = 12; // transition length in frames
+import { HAUL_SCENES, PRODUCTS, T } from "./tokens";
 
 /*
-  Voiceover timing (for ElevenLabs):
-  0:00  "Okay I literally just walked into Dollar Tree and I am on a mission."
-  0:03  [Product 1 — tumbler] "They got a whole new shipment. First thing I see — these tumblers. A dollar."
-  0:12  [Product 2 — serum]  "Next — vitamin C serum. I've seen this exact formula at Sephora for $28."
-  0:20  [Dupli spotlight]    "This is where it gets good. I've been using this app called Dupli..."
-  0:31  [Quick finds]        "Look at this haul — cables, masks, candles, jars. All a dollar."
-  0:38  [CTA]                "Dupli is free. Link in bio. You are so welcome."
+  Voiceover sync map (matches generate-voiceover-haul.mjs script):
+
+  0:00–0:02   Hook — "Okay I'm at Dollar Tree and Dupli just found me four dupes..."
+  0:03–0:11   Product 1 (tumbler) — "First — this Aquaflow tumbler..."
+  0:12–0:19   Product 2 (serum)   — "Second — B Pure Vitamin C serum capsules..."
+  0:20–0:27   Product 3 (body wash) — "Third — Eve St. Claire body wash..."
+  0:28–0:34   Product 4 (deodorant) — "Fourth — BPure aluminum-free deodorant..."
+  0:35–0:39   Savings card         — "Total savings today — one hundred and fifty-seven dollars..."
+  0:40–0:57   CTA                  — "Dupli is the app that finds you these. It's free. Link in bio."
 */
 
 export const HaulVideo: React.FC = () => {
   return (
-    <AbsoluteFill style={{ background: H.bg }}>
+    <AbsoluteFill>
       <Audio src={staticFile("voiceover-haul.mp3")} volume={1} />
 
       <TransitionSeries>
-
-        {/* 1. Hook */}
         <TransitionSeries.Sequence durationInFrames={HAUL_SCENES.hook}>
           <HookScene />
         </TransitionSeries.Sequence>
@@ -40,20 +36,8 @@ export const HaulVideo: React.FC = () => {
           timing={linearTiming({ durationInFrames: T })}
         />
 
-        {/* 2. Product 1 — Tumbler (Stanley dupe) */}
         <TransitionSeries.Sequence durationInFrames={HAUL_SCENES.product1}>
-          <ProductScene
-            name="Insulated Tumbler"
-            category="Drinkware"
-            trePrice="$1.25"
-            dupeOf="Stanley Quencher"
-            dupePrice="$45"
-            reactionText="WAIT. $1.25 ??"
-            bgColor="#DBEAFE"
-            photoEmoji="🥤"
-            showDupliScan
-            scanDelay={100}
-          />
+          <ProductScene product={PRODUCTS[0]} productNum={1} />
         </TransitionSeries.Sequence>
 
         <TransitionSeries.Transition
@@ -61,28 +45,8 @@ export const HaulVideo: React.FC = () => {
           timing={linearTiming({ durationInFrames: T })}
         />
 
-        {/* 3. Product 2 — Serum (Sephora dupe) */}
         <TransitionSeries.Sequence durationInFrames={HAUL_SCENES.product2}>
-          <ProductScene
-            name="Vitamin C Serum"
-            category="Skincare"
-            trePrice="$1.25"
-            dupeOf="Skinceuticals CE Ferulic"
-            dupePrice="$28"
-            reactionText="NO WAY 😭"
-            bgColor="#DCFCE7"
-            photoEmoji="🧴"
-          />
-        </TransitionSeries.Sequence>
-
-        <TransitionSeries.Transition
-          presentation={fade()}
-          timing={linearTiming({ durationInFrames: T })}
-        />
-
-        {/* 4. Dupli spotlight — app reveal */}
-        <TransitionSeries.Sequence durationInFrames={HAUL_SCENES.dupliSpot}>
-          <DupliSpotlightScene />
+          <ProductScene product={PRODUCTS[1]} productNum={2} />
         </TransitionSeries.Sequence>
 
         <TransitionSeries.Transition
@@ -90,9 +54,17 @@ export const HaulVideo: React.FC = () => {
           timing={linearTiming({ durationInFrames: T })}
         />
 
-        {/* 5. Quick finds grid */}
-        <TransitionSeries.Sequence durationInFrames={HAUL_SCENES.quickFinds}>
-          <QuickFindsScene />
+        <TransitionSeries.Sequence durationInFrames={HAUL_SCENES.product3}>
+          <ProductScene product={PRODUCTS[2]} productNum={3} />
+        </TransitionSeries.Sequence>
+
+        <TransitionSeries.Transition
+          presentation={slide({ direction: "from-right" })}
+          timing={linearTiming({ durationInFrames: T })}
+        />
+
+        <TransitionSeries.Sequence durationInFrames={HAUL_SCENES.product4}>
+          <ProductScene product={PRODUCTS[3]} productNum={4} />
         </TransitionSeries.Sequence>
 
         <TransitionSeries.Transition
@@ -100,11 +72,18 @@ export const HaulVideo: React.FC = () => {
           timing={linearTiming({ durationInFrames: T })}
         />
 
-        {/* 6. CTA */}
+        <TransitionSeries.Sequence durationInFrames={HAUL_SCENES.savings}>
+          <SavingsScene />
+        </TransitionSeries.Sequence>
+
+        <TransitionSeries.Transition
+          presentation={fade()}
+          timing={linearTiming({ durationInFrames: T })}
+        />
+
         <TransitionSeries.Sequence durationInFrames={HAUL_SCENES.cta}>
           <CTAScene />
         </TransitionSeries.Sequence>
-
       </TransitionSeries>
     </AbsoluteFill>
   );
