@@ -20,6 +20,7 @@ import fs from "fs";
 import path from "path";
 import https from "https";
 import http from "http";
+import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -31,10 +32,10 @@ const IMAGES = [
   {
     filename: "bg-aisle.jpg",
     urls: [
-      // CC-licensed Dollar Tree interior — Wikimedia Commons
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Dollar_Tree_Store_Interior.jpg/1280px-Dollar_Tree_Store_Interior.jpg",
-      // Fallback: generic discount store aisle (Unsplash — free to use)
+      // CC0 retail/store aisle — Unsplash (free to use, no attribution required)
       "https://images.unsplash.com/photo-1604719312566-8912e9c8a213?w=1920&q=85",
+      // Fallback: generic supermarket aisle
+      "https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=1920&q=85",
     ],
     placeholder: { label: "Dollar Tree Aisle", bg: "#22521e", fg: "#ffffff" },
   },
@@ -149,32 +150,31 @@ function download(url, dest) {
   });
 }
 
-function writeSvgPlaceholder(dest, label, bg, fg) {
-  // Remotion can render JPEG/PNG, so we write a simple SVG then note it's SVG
-  // Actually save as .jpg path but write SVG content — Remotion's Img uses browser
-  // which handles SVG fine when served locally.
-  const words = label.split(" ");
-  const lines = [];
-  let current = [];
-  for (const w of words) {
-    current.push(w);
-    if (current.join(" ").length > 18) { lines.push(current.join(" ")); current = []; }
-  }
-  if (current.length) lines.push(current.join(" "));
+// Generate a valid colored JPEG placeholder using ffmpeg (pre-installed on ubuntu-latest).
+// This is critical — Remotion's headless Chrome rejects non-JPEG data in .jpg files.
+function writePlaceholderJpeg(dest, label, bg) {
+  // Strip leading # from hex color for ffmpeg
+  const hex = bg.replace(/^#/, "");
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 640 640">
-  <rect width="640" height="640" fill="${bg}"/>
-  <text x="320" y="${320 - (lines.length - 1) * 28}" text-anchor="middle" font-family="system-ui,sans-serif" font-size="42" font-weight="bold" fill="${fg}">
-    ${lines.map((l, i) => `<tspan x="320" dy="${i === 0 ? 0 : 56}">${l}</tspan>`).join("")}
-  </text>
-</svg>`;
-  // Write as .svg alongside the .jpg name so we can reference it
-  fs.writeFileSync(dest.replace(/\.jpg$/, ".svg"), svg);
-  // Also write a tiny 1x1 JPEG stub so the filename exists (Remotion will use SVG)
-  // Actually — write SVG as the main file (rename dest to .svg is handled in tokens)
-  // Simpler: just write SVG bytes to the .jpg path — browsers handle this fine
-  fs.writeFileSync(dest, svg);
-  console.log(`  📝 SVG placeholder → ${path.basename(dest)}`);
+  try {
+    // ffmpeg solid-color JPEG — 640×640, single frame
+    execSync(
+      `ffmpeg -y -f lavfi -i "color=c=${r}/${g}/${b}:size=640x640:rate=1" -frames:v 1 -q:v 2 "${dest}"`,
+      { stdio: "pipe" }
+    );
+    console.log(`  🎨 JPEG placeholder → ${path.basename(dest)} (${label})`);
+  } catch (e) {
+    // Last resort: try ImageMagick
+    try {
+      execSync(`convert -size 640x640 xc:"${bg}" "${dest}"`, { stdio: "pipe" });
+      console.log(`  🎨 ImageMagick placeholder → ${path.basename(dest)}`);
+    } catch {
+      console.error(`  ❌ Could not create placeholder for ${path.basename(dest)}: ${e.message}`);
+    }
+  }
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -204,7 +204,7 @@ async function run() {
     }
 
     if (!success) {
-      writeSvgPlaceholder(dest, img.placeholder.label, img.placeholder.bg, img.placeholder.fg);
+      writePlaceholderJpeg(dest, img.placeholder.label, img.placeholder.bg);
       placeholders++;
     }
   }
