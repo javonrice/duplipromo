@@ -5,11 +5,13 @@ on:
     branches:
       - claude/add-remotion-claude-skills-AR7Ve
       - main
-  workflow_dispatch: # allows manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
   render:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -25,11 +27,24 @@ jobs:
 
       - name: Render video
         working-directory: video
-        run: npx remotion render DupliPromo out/dupli-promo.mp4 --log=verbose
-        env:
-          REMOTION_CHROME_MODE: download
+        run: npx remotion render DupliPromo out/dupli-promo.mp4
 
-      - name: Upload video artifact
+      - name: Upload to file.io and print download link
+        run: |
+          echo "## 🎬 Dupli Promo Video" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          RESPONSE=$(curl -s -F "file=@video/out/dupli-promo.mp4" https://file.io)
+          LINK=$(echo $RESPONSE | python3 -c "import sys,json; print(json.load(sys.stdin)['link'])")
+          echo "**Direct download link (expires in 14 days):**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "[$LINK]($LINK)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Tap the link to download the MP4 to your phone." >> $GITHUB_STEP_SUMMARY
+          echo "---"
+          echo "📲 DOWNLOAD LINK: $LINK"
+          echo "---"
+
+      - name: Upload artifact (backup)
         uses: actions/upload-artifact@v4
         with:
           name: dupli-promo-video
