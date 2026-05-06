@@ -1,0 +1,37 @@
+name: Render Dupli Promo Video
+
+on:
+  push:
+    branches:
+      - claude/add-remotion-claude-skills-AR7Ve
+      - main
+  workflow_dispatch: # allows manual trigger from GitHub UI
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: video/package-lock.json
+
+      - name: Install dependencies
+        working-directory: video
+        run: npm ci
+
+      - name: Render video
+        working-directory: video
+        run: npx remotion render DupliPromo out/dupli-promo.mp4 --log=verbose
+        env:
+          REMOTION_CHROME_MODE: download
+
+      - name: Upload video artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dupli-promo-video
+          path: video/out/dupli-promo.mp4
+          retention-days: 7
