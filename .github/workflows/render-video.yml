@@ -38,10 +38,20 @@ jobs:
         working-directory: video
         run: npm ci
 
-      - name: Generate voiceover (Psychology video)
-        if: ${{ github.event.inputs.composition != 'DupliPromo' }}
+      - name: Generate voiceover
         working-directory: video
+        continue-on-error: true
         run: node scripts/generate-voiceover-psychology.mjs
+
+      - name: Create silent fallback if voiceover missing
+        working-directory: video
+        run: |
+          if [ ! -f "public/voiceover-psychology.mp3" ]; then
+            echo "⚠️ Voiceover missing — creating silent placeholder"
+            ffmpeg -f lavfi -i anullsrc=r=44100:cl=mono -t 38 -q:a 9 -acodec libmp3lame public/voiceover-psychology.mp3
+          else
+            echo "✅ Voiceover found"
+          fi
 
       - name: Render DupliPsychology
         if: ${{ github.event.inputs.composition != 'DupliPromo' }}
@@ -53,23 +63,19 @@ jobs:
         working-directory: video
         run: npx remotion render DupliPromo out/dupli-promo.mp4
 
-      - name: Upload Psychology video and post link
+      - name: Post Psychology download link
         if: ${{ github.event.inputs.composition != 'DupliPromo' }}
         run: |
           echo "## 🎬 Dupli Psychology Video" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           RESPONSE=$(curl -s -F "file=@video/out/dupli-psychology.mp4" https://file.io)
           LINK=$(echo $RESPONSE | python3 -c "import sys,json; print(json.load(sys.stdin)['link'])")
-          echo "**Direct download link (expires in 14 days):**" >> $GITHUB_STEP_SUMMARY
+          echo "**Download link (expires in 14 days):**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "[$LINK]($LINK)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📲 Tap the link above to download the MP4 to your phone." >> $GITHUB_STEP_SUMMARY
-          echo "---"
           echo "📲 DOWNLOAD: $LINK"
-          echo "---"
 
-      - name: Upload Promo video and post link
+      - name: Post Promo download link
         if: ${{ github.event.inputs.composition == 'DupliPromo' || github.event.inputs.composition == 'both' }}
         run: |
           echo "## 🎬 Dupli Promo Video" >> $GITHUB_STEP_SUMMARY
