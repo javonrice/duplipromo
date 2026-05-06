@@ -1,5 +1,5 @@
 import React from "react";
-import { AbsoluteFill } from "remotion";
+import { AbsoluteFill, Audio, staticFile } from "remotion";
 import { TransitionSeries, linearTiming } from "@remotion/transitions";
 import { slide } from "@remotion/transitions/slide";
 import { fade } from "@remotion/transitions/fade";
@@ -26,6 +26,8 @@ const T = 12; // transition length in frames
 export const HaulVideo: React.FC = () => {
   return (
     <AbsoluteFill style={{ background: H.bg }}>
+      <Audio src={staticFile("voiceover-haul.mp3")} volume={1} />
+
       <TransitionSeries>
 
         {/* 1. Hook */}

@@ -14,6 +14,7 @@ on:
         type: choice
         options:
           - DupliPsychology
+          - DupliHaul
           - DupliPromo
           - both
 
@@ -38,46 +39,85 @@ jobs:
         working-directory: video
         run: npm ci
 
-      - name: Generate voiceover
+      # ── Psychology voiceover ──────────────────────────────────────────────
+      - name: Generate psychology voiceover
+        if: ${{ github.event.inputs.composition == 'DupliPsychology' || github.event.inputs.composition == 'both' || github.event.inputs.composition == '' }}
         working-directory: video
         continue-on-error: true
         run: node scripts/generate-voiceover-psychology.mjs
 
-      - name: Create silent fallback if voiceover missing
+      - name: Silent fallback — psychology
+        if: ${{ github.event.inputs.composition == 'DupliPsychology' || github.event.inputs.composition == 'both' || github.event.inputs.composition == '' }}
         working-directory: video
         run: |
           if [ ! -f "public/voiceover-psychology.mp3" ]; then
-            echo "⚠️ Voiceover missing — creating silent placeholder"
+            echo "⚠️ Psychology voiceover missing — creating silent placeholder"
             ffmpeg -f lavfi -i anullsrc=r=44100:cl=mono -t 38 -q:a 9 -acodec libmp3lame public/voiceover-psychology.mp3
           else
-            echo "✅ Voiceover found"
+            echo "✅ Psychology voiceover found"
           fi
 
+      # ── Haul voiceover ────────────────────────────────────────────────────
+      - name: Generate haul voiceover
+        if: ${{ github.event.inputs.composition == 'DupliHaul' || github.event.inputs.composition == 'both' }}
+        working-directory: video
+        continue-on-error: true
+        run: node scripts/generate-voiceover-haul.mjs
+
+      - name: Silent fallback — haul
+        if: ${{ github.event.inputs.composition == 'DupliHaul' || github.event.inputs.composition == 'both' }}
+        working-directory: video
+        run: |
+          if [ ! -f "public/voiceover-haul.mp3" ]; then
+            echo "⚠️ Haul voiceover missing — creating silent placeholder"
+            ffmpeg -f lavfi -i anullsrc=r=44100:cl=mono -t 43 -q:a 9 -acodec libmp3lame public/voiceover-haul.mp3
+          else
+            echo "✅ Haul voiceover found"
+          fi
+
+      # ── Renders ───────────────────────────────────────────────────────────
       - name: Render DupliPsychology
-        if: ${{ github.event.inputs.composition != 'DupliPromo' }}
+        if: ${{ github.event.inputs.composition == 'DupliPsychology' || github.event.inputs.composition == 'both' || github.event.inputs.composition == '' }}
         working-directory: video
         run: npx remotion render DupliPsychology out/dupli-psychology.mp4
+
+      - name: Render DupliHaul
+        if: ${{ github.event.inputs.composition == 'DupliHaul' || github.event.inputs.composition == 'both' }}
+        working-directory: video
+        run: npx remotion render DupliHaul out/dupli-haul.mp4
 
       - name: Render DupliPromo
         if: ${{ github.event.inputs.composition == 'DupliPromo' || github.event.inputs.composition == 'both' }}
         working-directory: video
         run: npx remotion render DupliPromo out/dupli-promo.mp4
 
+      # ── Upload & share ────────────────────────────────────────────────────
       - name: Post Psychology download link
-        if: ${{ github.event.inputs.composition != 'DupliPromo' }}
+        if: ${{ github.event.inputs.composition == 'DupliPsychology' || github.event.inputs.composition == 'both' || github.event.inputs.composition == '' }}
         continue-on-error: true
         run: |
           echo "## 🎬 Dupli Psychology Video" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           RESPONSE=$(curl -s --max-time 60 -F "file=@video/out/dupli-psychology.mp4" https://file.io/?expires=14d)
-          echo "Raw response: $RESPONSE"
           LINK=$(echo "$RESPONSE" | jq -r '.link // .url // empty' 2>/dev/null)
           if [ -z "$LINK" ]; then
-            echo "⚠️ file.io upload failed — download the MP4 from the Artifacts section below." >> $GITHUB_STEP_SUMMARY
-            echo "⚠️ No link — use artifact instead"
+            echo "⚠️ Upload failed — download from Artifacts below." >> $GITHUB_STEP_SUMMARY
           else
             echo "[$LINK]($LINK)" >> $GITHUB_STEP_SUMMARY
-            echo "📲 DOWNLOAD: $LINK"
+            echo "📲 PSYCHOLOGY DOWNLOAD: $LINK"
+          fi
+
+      - name: Post Haul download link
+        if: ${{ github.event.inputs.composition == 'DupliHaul' || github.event.inputs.composition == 'both' }}
+        continue-on-error: true
+        run: |
+          echo "## 🎬 Dupli Haul Video" >> $GITHUB_STEP_SUMMARY
+          RESPONSE=$(curl -s --max-time 60 -F "file=@video/out/dupli-haul.mp4" https://file.io/?expires=14d)
+          LINK=$(echo "$RESPONSE" | jq -r '.link // .url // empty' 2>/dev/null)
+          if [ -z "$LINK" ]; then
+            echo "⚠️ Upload failed — download from Artifacts below." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "[$LINK]($LINK)" >> $GITHUB_STEP_SUMMARY
+            echo "📲 HAUL DOWNLOAD: $LINK"
           fi
 
       - name: Post Promo download link
@@ -88,7 +128,7 @@ jobs:
           RESPONSE=$(curl -s --max-time 60 -F "file=@video/out/dupli-promo.mp4" https://file.io/?expires=14d)
           LINK=$(echo "$RESPONSE" | jq -r '.link // .url // empty' 2>/dev/null)
           if [ -z "$LINK" ]; then
-            echo "⚠️ Use artifact instead." >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ Upload failed — download from Artifacts below." >> $GITHUB_STEP_SUMMARY
           else
             echo "[$LINK]($LINK)" >> $GITHUB_STEP_SUMMARY
             echo "📲 PROMO DOWNLOAD: $LINK"
