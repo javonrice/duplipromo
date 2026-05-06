@@ -28,7 +28,7 @@ export const RemotionRoot: React.FC = () => {
         height={HEIGHT}
       />
       <Composition
-        id="DupliHaul"
+        id="DollarTreeHaul"
         component={HaulVideo}
         durationInFrames={HAUL_TOTAL}
         fps={HAUL_FPS}

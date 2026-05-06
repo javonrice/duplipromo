@@ -14,7 +14,7 @@ on:
         type: choice
         options:
           - DupliPsychology
-          - DupliHaul
+          - DollarTreeHaul
           - DupliPromo
           - both
 
@@ -59,13 +59,13 @@ jobs:
 
       # ── Haul voiceover ────────────────────────────────────────────────────
       - name: Generate haul voiceover
-        if: ${{ github.event.inputs.composition == 'DupliHaul' || github.event.inputs.composition == 'both' }}
+        if: ${{ github.event.inputs.composition == 'DollarTreeHaul' || github.event.inputs.composition == 'both' }}
         working-directory: video
         continue-on-error: true
         run: node scripts/generate-voiceover-haul.mjs
 
       - name: Silent fallback — haul
-        if: ${{ github.event.inputs.composition == 'DupliHaul' || github.event.inputs.composition == 'both' }}
+        if: ${{ github.event.inputs.composition == 'DollarTreeHaul' || github.event.inputs.composition == 'both' }}
         working-directory: video
         run: |
           if [ ! -f "public/voiceover-haul.mp3" ]; then
@@ -81,10 +81,10 @@ jobs:
         working-directory: video
         run: npx remotion render DupliPsychology out/dupli-psychology.mp4
 
-      - name: Render DupliHaul
-        if: ${{ github.event.inputs.composition == 'DupliHaul' || github.event.inputs.composition == 'both' }}
+      - name: Render DollarTreeHaul
+        if: ${{ github.event.inputs.composition == 'DollarTreeHaul' || github.event.inputs.composition == 'both' }}
         working-directory: video
-        run: npx remotion render DupliHaul out/dupli-haul.mp4
+        run: npx remotion render DollarTreeHaul out/dollar-tree-haul.mp4
 
       - name: Render DupliPromo
         if: ${{ github.event.inputs.composition == 'DupliPromo' || github.event.inputs.composition == 'both' }}
@@ -107,11 +107,11 @@ jobs:
           fi
 
       - name: Post Haul download link
-        if: ${{ github.event.inputs.composition == 'DupliHaul' || github.event.inputs.composition == 'both' }}
+        if: ${{ github.event.inputs.composition == 'DollarTreeHaul' || github.event.inputs.composition == 'both' }}
         continue-on-error: true
         run: |
-          echo "## 🎬 Dupli Haul Video" >> $GITHUB_STEP_SUMMARY
-          RESPONSE=$(curl -s --max-time 60 -F "file=@video/out/dupli-haul.mp4" https://file.io/?expires=14d)
+          echo "## 🎬 Dollar Tree Haul Video" >> $GITHUB_STEP_SUMMARY
+          RESPONSE=$(curl -s --max-time 60 -F "file=@video/out/dollar-tree-haul.mp4" https://file.io/?expires=14d)
           LINK=$(echo "$RESPONSE" | jq -r '.link // .url // empty' 2>/dev/null)
           if [ -z "$LINK" ]; then
             echo "⚠️ Upload failed — download from Artifacts below." >> $GITHUB_STEP_SUMMARY
