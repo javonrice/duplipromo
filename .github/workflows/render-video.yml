@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       composition:
-        description: 'Which composition to render'
+        description: 'Which composition to render (leave blank for DossaomiVideo)'
         required: false
         default: 'DupliPsychology'
         type: choice
@@ -17,6 +17,23 @@ on:
           - DollarTreeHaul
           - DupliPromo
           - both
+      # ── Dossami SaaS inputs ──────────────────────────────────────────────
+      video_id:
+        description: 'Supabase video UUID (Dossami)'
+        required: false
+        default: ''
+      script:
+        description: 'User script (Dossami)'
+        required: false
+        default: ''
+      style:
+        description: 'Visual style: minimal | bold | cinematic (Dossami)'
+        required: false
+        default: 'minimal'
+      size:
+        description: 'Format: 9:16 | 16:9 (Dossami)'
+        required: false
+        default: '9:16'
 
 jobs:
   render:
@@ -24,7 +41,9 @@ jobs:
     permissions:
       contents: write
     env:
-      ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+      ELEVENLABS_API_KEY:     ${{ secrets.ELEVENLABS_API_KEY }}
+      SUPABASE_URL:           https://mpemvvakffinptjyrkzg.supabase.co
+      SUPABASE_SERVICE_KEY:   ${{ secrets.SUPABASE_SERVICE_KEY }}
 
     steps:
       - uses: actions/checkout@v4
@@ -39,126 +58,200 @@ jobs:
         working-directory: video
         run: npm ci
 
-      # ── Psychology voiceover ──────────────────────────────────────────────
+      # ════════════════════════════════════════════════════════════════════════
+      # DOSSAMI — user-submitted script render
+      # Triggered when video_id input is present
+      # ════════════════════════════════════════════════════════════════════════
+
+      - name: Mark video as rendering
+        if: ${{ github.event.inputs.video_id != '' }}
+        run: |
+          curl -s -X PATCH "$SUPABASE_URL/rest/v1/videos?id=eq.${{ github.event.inputs.video_id }}" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"status":"rendering"}'
+
+      - name: Generate Dossami voiceover
+        if: ${{ github.event.inputs.video_id != '' }}
+        working-directory: video
+        continue-on-error: true
+        env:
+          DOSSAMI_SCRIPT: ${{ github.event.inputs.script }}
+          DOSSAMI_STYLE:  ${{ github.event.inputs.style }}
+        run: node scripts/generate-voiceover-dossami.mjs
+
+      - name: Silent fallback — Dossami voiceover
+        if: ${{ github.event.inputs.video_id != '' }}
+        working-directory: video
+        run: |
+          if [ ! -f "public/voiceover-dossami.mp3" ]; then
+            WORDS=$(echo "${{ github.event.inputs.script }}" | wc -w)
+            SECS=$(( (WORDS * 60 / 150) + 2 ))
+            echo "⚠️ Voiceover failed — creating ${SECS}s silent fallback"
+            ffmpeg -f lavfi -i anullsrc=r=44100:cl=mono -t $SECS -q:a 9 -acodec libmp3lame public/voiceover-dossami.mp3
+          else
+            echo "✅ Dossami voiceover ready"
+          fi
+
+      - name: Render DossamiVideo
+        if: ${{ github.event.inputs.video_id != '' }}
+        working-directory: video
+        run: |
+          PROPS=$(node -e "
+            const s = JSON.stringify({
+              script: process.env.SCRIPT,
+              style:  process.env.STYLE  || 'minimal',
+              size:   process.env.SIZE   || '9:16',
+            });
+            process.stdout.write(s);
+          ")
+          npx remotion render DossamiVideo out/dossami.mp4 --props="$PROPS"
+        env:
+          SCRIPT: ${{ github.event.inputs.script }}
+          STYLE:  ${{ github.event.inputs.style }}
+          SIZE:   ${{ github.event.inputs.size }}
+
+      - name: Ensure Supabase storage bucket exists
+        if: ${{ github.event.inputs.video_id != '' }}
+        run: |
+          curl -s -X POST "$SUPABASE_URL/storage/v1/bucket" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"id":"videos","name":"videos","public":true}' || true
+
+      - name: Upload video to Supabase Storage
+        if: ${{ github.event.inputs.video_id != '' }}
+        id: upload
+        run: |
+          VIDEO_ID="${{ github.event.inputs.video_id }}"
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST "$SUPABASE_URL/storage/v1/object/videos/${VIDEO_ID}.mp4" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: video/mp4" \
+            --data-binary @video/out/dossami.mp4)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          echo "Upload HTTP status: $HTTP_CODE"
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            VIDEO_URL="$SUPABASE_URL/storage/v1/object/public/videos/${VIDEO_ID}.mp4"
+            echo "video_url=$VIDEO_URL" >> $GITHUB_OUTPUT
+            echo "✅ Uploaded: $VIDEO_URL"
+          else
+            echo "❌ Upload failed: $RESPONSE"
+            exit 1
+          fi
+
+      - name: Mark video as done in Supabase
+        if: ${{ github.event.inputs.video_id != '' && success() }}
+        run: |
+          VIDEO_URL="${{ steps.upload.outputs.video_url }}"
+          curl -s -X PATCH "$SUPABASE_URL/rest/v1/videos?id=eq.${{ github.event.inputs.video_id }}" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"status\":\"done\",\"video_url\":\"$VIDEO_URL\"}"
+          echo "✅ Supabase record updated — done"
+
+      - name: Mark video as failed in Supabase
+        if: ${{ github.event.inputs.video_id != '' && failure() }}
+        run: |
+          curl -s -X PATCH "$SUPABASE_URL/rest/v1/videos?id=eq.${{ github.event.inputs.video_id }}" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"status":"failed"}'
+          echo "❌ Supabase record updated — failed"
+
+      # ════════════════════════════════════════════════════════════════════════
+      # ORIGINAL COMPOSITIONS
+      # ════════════════════════════════════════════════════════════════════════
+
       - name: Generate psychology voiceover
-        if: ${{ github.event.inputs.composition == 'DupliPsychology' || github.event.inputs.composition == 'both' || github.event.inputs.composition == '' }}
+        if: ${{ github.event.inputs.video_id == '' && (github.event.inputs.composition == 'DupliPsychology' || github.event.inputs.composition == 'both' || github.event.inputs.composition == '') }}
         working-directory: video
         continue-on-error: true
         run: node scripts/generate-voiceover-psychology.mjs
 
       - name: Silent fallback — psychology
-        if: ${{ github.event.inputs.composition == 'DupliPsychology' || github.event.inputs.composition == 'both' || github.event.inputs.composition == '' }}
+        if: ${{ github.event.inputs.video_id == '' && (github.event.inputs.composition == 'DupliPsychology' || github.event.inputs.composition == 'both' || github.event.inputs.composition == '') }}
         working-directory: video
         run: |
           if [ ! -f "public/voiceover-psychology.mp3" ]; then
-            echo "⚠️ Psychology voiceover missing — creating silent placeholder"
             ffmpeg -f lavfi -i anullsrc=r=44100:cl=mono -t 38 -q:a 9 -acodec libmp3lame public/voiceover-psychology.mp3
-          else
-            echo "✅ Psychology voiceover found"
           fi
 
-      # ── Haul voiceover ────────────────────────────────────────────────────
       - name: Generate haul voiceover
-        if: ${{ github.event.inputs.composition == 'DollarTreeHaul' || github.event.inputs.composition == 'both' }}
+        if: ${{ github.event.inputs.video_id == '' && (github.event.inputs.composition == 'DollarTreeHaul' || github.event.inputs.composition == 'both') }}
         working-directory: video
         continue-on-error: true
         run: node scripts/generate-voiceover-haul.mjs
 
       - name: Silent fallback — haul
-        if: ${{ github.event.inputs.composition == 'DollarTreeHaul' || github.event.inputs.composition == 'both' }}
+        if: ${{ github.event.inputs.video_id == '' && (github.event.inputs.composition == 'DollarTreeHaul' || github.event.inputs.composition == 'both') }}
         working-directory: video
         run: |
           if [ ! -f "public/voiceover-haul.mp3" ]; then
-            echo "⚠️ Haul voiceover missing — creating silent placeholder"
             ffmpeg -f lavfi -i anullsrc=r=44100:cl=mono -t 43 -q:a 9 -acodec libmp3lame public/voiceover-haul.mp3
-          else
-            echo "✅ Haul voiceover found"
           fi
 
-      # ── Haul product images ───────────────────────────────────────────────
       - name: Download haul product images
-        if: ${{ github.event.inputs.composition == 'DollarTreeHaul' || github.event.inputs.composition == 'both' }}
+        if: ${{ github.event.inputs.video_id == '' && (github.event.inputs.composition == 'DollarTreeHaul' || github.event.inputs.composition == 'both') }}
         working-directory: video
         run: node scripts/download-haul-images.mjs
 
       - name: Verify haul images exist
-        if: ${{ github.event.inputs.composition == 'DollarTreeHaul' || github.event.inputs.composition == 'both' }}
+        if: ${{ github.event.inputs.video_id == '' && (github.event.inputs.composition == 'DollarTreeHaul' || github.event.inputs.composition == 'both') }}
         working-directory: video
         run: |
           MISSING=0
           for f in bg-aisle dt-tumbler dt-serum dt-bodywash dt-deodorant brand-stanley brand-serum brand-soldejan brand-native; do
             FILE="public/haul/${f}.jpg"
-            if [ ! -f "$FILE" ] || [ ! -s "$FILE" ]; then
-              echo "❌ Missing or empty: $FILE"
-              MISSING=1
-            else
-              SIZE=$(wc -c < "$FILE")
-              echo "✅ $FILE (${SIZE} bytes)"
-            fi
+            if [ ! -f "$FILE" ] || [ ! -s "$FILE" ]; then echo "❌ Missing: $FILE"; MISSING=1
+            else echo "✅ $FILE ($(wc -c < "$FILE") bytes)"; fi
           done
-          if [ "$MISSING" -eq 1 ]; then
-            echo "::error::Some haul images are missing — render will fail. Check download-haul-images.mjs logs above."
-            exit 1
-          fi
+          [ "$MISSING" -eq 0 ] || { echo "::error::Haul images missing"; exit 1; }
 
-      # ── Renders ───────────────────────────────────────────────────────────
       - name: Render DupliPsychology
-        if: ${{ github.event.inputs.composition == 'DupliPsychology' || github.event.inputs.composition == 'both' || github.event.inputs.composition == '' }}
+        if: ${{ github.event.inputs.video_id == '' && (github.event.inputs.composition == 'DupliPsychology' || github.event.inputs.composition == 'both' || github.event.inputs.composition == '') }}
         working-directory: video
         run: npx remotion render DupliPsychology out/dupli-psychology.mp4
 
       - name: Render DollarTreeHaul
-        if: ${{ github.event.inputs.composition == 'DollarTreeHaul' || github.event.inputs.composition == 'both' }}
+        if: ${{ github.event.inputs.video_id == '' && (github.event.inputs.composition == 'DollarTreeHaul' || github.event.inputs.composition == 'both') }}
         working-directory: video
         run: npx remotion render DollarTreeHaul out/dollar-tree-haul.mp4
 
       - name: Render DupliPromo
-        if: ${{ github.event.inputs.composition == 'DupliPromo' || github.event.inputs.composition == 'both' }}
+        if: ${{ github.event.inputs.video_id == '' && (github.event.inputs.composition == 'DupliPromo' || github.event.inputs.composition == 'both') }}
         working-directory: video
         run: npx remotion render DupliPromo out/dupli-promo.mp4
 
-      # ── Upload & share ────────────────────────────────────────────────────
       - name: Post Psychology download link
-        if: ${{ github.event.inputs.composition == 'DupliPsychology' || github.event.inputs.composition == 'both' || github.event.inputs.composition == '' }}
+        if: ${{ github.event.inputs.video_id == '' && (github.event.inputs.composition == 'DupliPsychology' || github.event.inputs.composition == 'both' || github.event.inputs.composition == '') }}
         continue-on-error: true
         run: |
           echo "## 🎬 Dupli Psychology Video" >> $GITHUB_STEP_SUMMARY
           RESPONSE=$(curl -s --max-time 60 -F "file=@video/out/dupli-psychology.mp4" https://file.io/?expires=14d)
           LINK=$(echo "$RESPONSE" | jq -r '.link // .url // empty' 2>/dev/null)
-          if [ -z "$LINK" ]; then
-            echo "⚠️ Upload failed — download from Artifacts below." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "[$LINK]($LINK)" >> $GITHUB_STEP_SUMMARY
-            echo "📲 PSYCHOLOGY DOWNLOAD: $LINK"
-          fi
+          [ -n "$LINK" ] && echo "[$LINK]($LINK)" >> $GITHUB_STEP_SUMMARY || echo "⚠️ Use artifact." >> $GITHUB_STEP_SUMMARY
 
       - name: Post Haul download link
-        if: ${{ github.event.inputs.composition == 'DollarTreeHaul' || github.event.inputs.composition == 'both' }}
+        if: ${{ github.event.inputs.video_id == '' && (github.event.inputs.composition == 'DollarTreeHaul' || github.event.inputs.composition == 'both') }}
         continue-on-error: true
         run: |
           echo "## 🎬 Dollar Tree Haul Video" >> $GITHUB_STEP_SUMMARY
           RESPONSE=$(curl -s --max-time 60 -F "file=@video/out/dollar-tree-haul.mp4" https://file.io/?expires=14d)
           LINK=$(echo "$RESPONSE" | jq -r '.link // .url // empty' 2>/dev/null)
-          if [ -z "$LINK" ]; then
-            echo "⚠️ Upload failed — download from Artifacts below." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "[$LINK]($LINK)" >> $GITHUB_STEP_SUMMARY
-            echo "📲 HAUL DOWNLOAD: $LINK"
-          fi
+          [ -n "$LINK" ] && echo "[$LINK]($LINK)" >> $GITHUB_STEP_SUMMARY || echo "⚠️ Use artifact." >> $GITHUB_STEP_SUMMARY
 
       - name: Post Promo download link
-        if: ${{ github.event.inputs.composition == 'DupliPromo' || github.event.inputs.composition == 'both' }}
+        if: ${{ github.event.inputs.video_id == '' && (github.event.inputs.composition == 'DupliPromo' || github.event.inputs.composition == 'both') }}
         continue-on-error: true
         run: |
           echo "## 🎬 Dupli Promo Video" >> $GITHUB_STEP_SUMMARY
           RESPONSE=$(curl -s --max-time 60 -F "file=@video/out/dupli-promo.mp4" https://file.io/?expires=14d)
           LINK=$(echo "$RESPONSE" | jq -r '.link // .url // empty' 2>/dev/null)
-          if [ -z "$LINK" ]; then
-            echo "⚠️ Upload failed — download from Artifacts below." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "[$LINK]($LINK)" >> $GITHUB_STEP_SUMMARY
-            echo "📲 PROMO DOWNLOAD: $LINK"
-          fi
+          [ -n "$LINK" ] && echo "[$LINK]($LINK)" >> $GITHUB_STEP_SUMMARY || echo "⚠️ Use artifact." >> $GITHUB_STEP_SUMMARY
 
       - name: Upload artifacts
         if: always()
