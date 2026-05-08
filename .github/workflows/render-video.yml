@@ -41,9 +41,10 @@ jobs:
     permissions:
       contents: write
     env:
-      ELEVENLABS_API_KEY:     ${{ secrets.ELEVENLABS_API_KEY }}
-      SUPABASE_URL:           https://mpemvvakffinptjyrkzg.supabase.co
-      SUPABASE_SERVICE_KEY:   ${{ secrets.SUPABASE_SERVICE_KEY }}
+      ELEVENLABS_API_KEY:       ${{ secrets.ELEVENLABS_API_KEY }}
+      SUPABASE_EDGE_URL:        https://mpemvvakffinptjyrkzg.supabase.co/functions/v1
+      DOSSAMI_WEBHOOK_SECRET:   ${{ secrets.DOSSAMI_WEBHOOK_SECRET }}
+      GH_TOKEN:                 ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
@@ -66,11 +67,10 @@ jobs:
       - name: Mark video as rendering
         if: ${{ github.event.inputs.video_id != '' }}
         run: |
-          curl -s -X PATCH "$SUPABASE_URL/rest/v1/videos?id=eq.${{ github.event.inputs.video_id }}" \
-            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
-            -H "apikey: $SUPABASE_SERVICE_KEY" \
+          curl -s -X POST "$SUPABASE_EDGE_URL/complete-render" \
             -H "Content-Type: application/json" \
-            -d '{"status":"rendering"}'
+            -H "x-webhook-secret: $DOSSAMI_WEBHOOK_SECRET" \
+            -d "{\"video_id\":\"${{ github.event.inputs.video_id }}\",\"status\":\"rendering\"}"
 
       - name: Generate Dossami voiceover
         if: ${{ github.event.inputs.video_id != '' }}
@@ -112,55 +112,61 @@ jobs:
           STYLE:  ${{ github.event.inputs.style }}
           SIZE:   ${{ github.event.inputs.size }}
 
-      - name: Ensure Supabase storage bucket exists
-        if: ${{ github.event.inputs.video_id != '' }}
-        run: |
-          curl -s -X POST "$SUPABASE_URL/storage/v1/bucket" \
-            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
-            -H "Content-Type: application/json" \
-            -d '{"id":"videos","name":"videos","public":true}' || true
-
-      - name: Upload video to Supabase Storage
+      - name: Upload video to GitHub Release
         if: ${{ github.event.inputs.video_id != '' }}
         id: upload
         run: |
           VIDEO_ID="${{ github.event.inputs.video_id }}"
-          RESPONSE=$(curl -s -w "\n%{http_code}" \
-            -X POST "$SUPABASE_URL/storage/v1/object/videos/${VIDEO_ID}.mp4" \
-            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
-            -H "Content-Type: video/mp4" \
-            --data-binary @video/out/dossami.mp4)
-          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-          echo "Upload HTTP status: $HTTP_CODE"
-          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            VIDEO_URL="$SUPABASE_URL/storage/v1/object/public/videos/${VIDEO_ID}.mp4"
-            echo "video_url=$VIDEO_URL" >> $GITHUB_OUTPUT
-            echo "✅ Uploaded: $VIDEO_URL"
-          else
-            echo "❌ Upload failed: $RESPONSE"
+          TAG="video-${VIDEO_ID}"
+
+          # Create a release to host the video (idempotent)
+          RELEASE=$(curl -s -X POST \
+            "https://api.github.com/repos/javonrice/duplipromo/releases" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"$TAG\",\"name\":\"Video $VIDEO_ID\",\"draft\":false,\"prerelease\":false}")
+
+          UPLOAD_URL=$(echo "$RELEASE" | python3 -c "import sys,json; print(json.load(sys.stdin)['upload_url'].split('{')[0])" 2>/dev/null)
+
+          if [ -z "$UPLOAD_URL" ]; then
+            echo "❌ Could not get upload URL from release"
+            echo "$RELEASE"
             exit 1
           fi
 
-      - name: Mark video as done in Supabase
+          # Upload the MP4
+          ASSET=$(curl -s -X POST "${UPLOAD_URL}?name=${VIDEO_ID}.mp4" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Content-Type: video/mp4" \
+            --data-binary @video/out/dossami.mp4)
+
+          VIDEO_URL=$(echo "$ASSET" | python3 -c "import sys,json; print(json.load(sys.stdin)['browser_download_url'])" 2>/dev/null)
+
+          if [ -z "$VIDEO_URL" ]; then
+            echo "❌ Upload failed"; echo "$ASSET"; exit 1
+          fi
+
+          echo "video_url=$VIDEO_URL" >> $GITHUB_OUTPUT
+          echo "✅ Uploaded: $VIDEO_URL"
+
+      - name: Mark video as done
         if: ${{ github.event.inputs.video_id != '' && success() }}
         run: |
-          VIDEO_URL="${{ steps.upload.outputs.video_url }}"
-          curl -s -X PATCH "$SUPABASE_URL/rest/v1/videos?id=eq.${{ github.event.inputs.video_id }}" \
-            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
-            -H "apikey: $SUPABASE_SERVICE_KEY" \
+          curl -s -X POST "$SUPABASE_EDGE_URL/complete-render" \
             -H "Content-Type: application/json" \
-            -d "{\"status\":\"done\",\"video_url\":\"$VIDEO_URL\"}"
-          echo "✅ Supabase record updated — done"
+            -H "x-webhook-secret: $DOSSAMI_WEBHOOK_SECRET" \
+            -d "{\"video_id\":\"${{ github.event.inputs.video_id }}\",\"status\":\"done\",\"video_url\":\"${{ steps.upload.outputs.video_url }}\"}"
+          echo "✅ Marked done"
 
-      - name: Mark video as failed in Supabase
+      - name: Mark video as failed
         if: ${{ github.event.inputs.video_id != '' && failure() }}
         run: |
-          curl -s -X PATCH "$SUPABASE_URL/rest/v1/videos?id=eq.${{ github.event.inputs.video_id }}" \
-            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
-            -H "apikey: $SUPABASE_SERVICE_KEY" \
+          curl -s -X POST "$SUPABASE_EDGE_URL/complete-render" \
             -H "Content-Type: application/json" \
-            -d '{"status":"failed"}'
-          echo "❌ Supabase record updated — failed"
+            -H "x-webhook-secret: $DOSSAMI_WEBHOOK_SECRET" \
+            -d "{\"video_id\":\"${{ github.event.inputs.video_id }}\",\"status\":\"failed\"}"
+          echo "❌ Marked failed"
 
       # ════════════════════════════════════════════════════════════════════════
       # ORIGINAL COMPOSITIONS
