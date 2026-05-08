@@ -47,6 +47,16 @@ jobs:
       GH_TOKEN:                 ${{ secrets.GITHUB_TOKEN }}
 
     steps:
+      - name: Log trigger inputs
+        run: |
+          echo "=== Trigger ==="
+          echo "event: ${{ github.event_name }}"
+          echo "video_id: '${{ github.event.inputs.video_id }}'"
+          echo "composition: '${{ github.event.inputs.composition }}'"
+          echo "style: '${{ github.event.inputs.style }}'"
+          echo "size: '${{ github.event.inputs.size }}'"
+          echo "script_len: $(echo '${{ github.event.inputs.script }}' | wc -c) chars"
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
