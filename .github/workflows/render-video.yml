@@ -76,6 +76,7 @@ jobs:
 
       - name: Mark video as rendering
         if: ${{ github.event.inputs.video_id != '' }}
+        continue-on-error: true
         run: |
           HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$SUPABASE_EDGE_URL/trigger-render" \
             -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
@@ -83,7 +84,7 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{\"video_id\":\"${{ github.event.inputs.video_id }}\",\"status\":\"rendering\"}")
           echo "HTTP status: $HTTP"
-          [ "$HTTP" = "200" ] && echo "✅ Marked rendering" || { echo "❌ trigger-render callback returned $HTTP"; exit 1; }
+          [ "$HTTP" = "200" ] && echo "✅ Marked rendering" || echo "⚠️ DB callback unavailable ($HTTP) — render will still proceed"
 
       - name: Generate Dossami voiceover
         if: ${{ github.event.inputs.video_id != '' }}
