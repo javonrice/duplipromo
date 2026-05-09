@@ -42,6 +42,7 @@ jobs:
       contents: write
     env:
       ELEVENLABS_API_KEY:       ${{ secrets.ELEVENLABS_API_KEY }}
+      GEMINI_API_KEY:           ${{ secrets.GEMINI_API_KEY }}
       SUPABASE_EDGE_URL:        https://mpemvvakffinptjyrkzg.supabase.co/functions/v1
       DOSSAMI_WEBHOOK_SECRET:   ${{ secrets.DOSSAMI_WEBHOOK_SECRET }}
       GH_TOKEN:                 ${{ secrets.GITHUB_TOKEN }}
@@ -102,6 +103,25 @@ jobs:
             ffmpeg -f lavfi -i anullsrc=r=44100:cl=mono -t $SECS -q:a 9 -acodec libmp3lame public/voiceover-dossami.mp3
           else
             echo "✅ Dossami voiceover ready"
+          fi
+
+      - name: Generate Dossami scene illustrations
+        if: ${{ github.event.inputs.video_id != '' }}
+        working-directory: video
+        continue-on-error: true
+        env:
+          DOSSAMI_SCRIPT: ${{ github.event.inputs.script }}
+        run: node scripts/generate-dossami-scenes.mjs
+
+      - name: Fallback — empty scenes JSON
+        if: ${{ github.event.inputs.video_id != '' }}
+        working-directory: video
+        run: |
+          if [ ! -f "public/dossami-scenes.json" ]; then
+            echo "[]" > public/dossami-scenes.json
+            echo "⚠️ Using empty scenes fallback"
+          else
+            echo "✅ Scenes JSON ready ($(wc -c < public/dossami-scenes.json) bytes)"
           fi
 
       - name: Render DossamiVideo
