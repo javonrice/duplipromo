@@ -41,10 +41,10 @@ jobs:
     permissions:
       contents: write
     env:
-      ELEVENLABS_API_KEY:   ${{ secrets.ELEVENLABS_API_KEY }}
-      SUPABASE_EDGE_URL:    https://mpemvvakffinptjyrkzg.supabase.co/functions/v1
-      SUPABASE_ANON_KEY:    eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1wZW12dmFrZmZpbnB0anlya3pnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyNzIyNjIsImV4cCI6MjA5Mzg0ODI2Mn0.KiRF4NH5eAgAWjnaT12e_GHOZwU6ozksn056nGVWRxI
-      GH_TOKEN:             ${{ secrets.GITHUB_TOKEN }}
+      ELEVENLABS_API_KEY:       ${{ secrets.ELEVENLABS_API_KEY }}
+      SUPABASE_EDGE_URL:        https://mpemvvakffinptjyrkzg.supabase.co/functions/v1
+      DOSSAMI_WEBHOOK_SECRET:   ${{ secrets.DOSSAMI_WEBHOOK_SECRET }}
+      GH_TOKEN:                 ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Log trigger inputs
@@ -76,15 +76,11 @@ jobs:
 
       - name: Mark video as rendering
         if: ${{ github.event.inputs.video_id != '' }}
-        continue-on-error: true
         run: |
-          HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$SUPABASE_EDGE_URL/trigger-render" \
-            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
-            -H "apikey: $SUPABASE_ANON_KEY" \
+          curl -s -X POST "$SUPABASE_EDGE_URL/complete-render" \
             -H "Content-Type: application/json" \
-            -d "{\"video_id\":\"${{ github.event.inputs.video_id }}\",\"status\":\"rendering\"}")
-          echo "HTTP status: $HTTP"
-          [ "$HTTP" = "200" ] && echo "✅ Marked rendering" || echo "⚠️ DB callback unavailable ($HTTP) — render will still proceed"
+            -H "x-webhook-secret: $DOSSAMI_WEBHOOK_SECRET" \
+            -d "{\"video_id\":\"${{ github.event.inputs.video_id }}\",\"status\":\"rendering\"}"
 
       - name: Generate Dossami voiceover
         if: ${{ github.event.inputs.video_id != '' }}
@@ -167,21 +163,18 @@ jobs:
       - name: Mark video as done
         if: ${{ github.event.inputs.video_id != '' && success() }}
         run: |
-          HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$SUPABASE_EDGE_URL/trigger-render" \
-            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
-            -H "apikey: $SUPABASE_ANON_KEY" \
+          curl -s -X POST "$SUPABASE_EDGE_URL/complete-render" \
             -H "Content-Type: application/json" \
-            -d "{\"video_id\":\"${{ github.event.inputs.video_id }}\",\"status\":\"done\",\"video_url\":\"${{ steps.upload.outputs.video_url }}\"}")
-          echo "HTTP status: $HTTP"
-          [ "$HTTP" = "200" ] && echo "✅ Marked done" || echo "⚠️ trigger-render callback returned $HTTP"
+            -H "x-webhook-secret: $DOSSAMI_WEBHOOK_SECRET" \
+            -d "{\"video_id\":\"${{ github.event.inputs.video_id }}\",\"status\":\"done\",\"video_url\":\"${{ steps.upload.outputs.video_url }}\"}"
+          echo "✅ Marked done"
 
       - name: Mark video as failed
         if: ${{ github.event.inputs.video_id != '' && failure() }}
         run: |
-          curl -s -o /dev/null -X POST "$SUPABASE_EDGE_URL/trigger-render" \
-            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
-            -H "apikey: $SUPABASE_ANON_KEY" \
+          curl -s -X POST "$SUPABASE_EDGE_URL/complete-render" \
             -H "Content-Type: application/json" \
+            -H "x-webhook-secret: $DOSSAMI_WEBHOOK_SECRET" \
             -d "{\"video_id\":\"${{ github.event.inputs.video_id }}\",\"status\":\"failed\"}"
           echo "❌ Marked failed"
 
