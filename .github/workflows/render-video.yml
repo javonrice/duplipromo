@@ -42,8 +42,8 @@ jobs:
       contents: write
     env:
       ELEVENLABS_API_KEY:       ${{ secrets.ELEVENLABS_API_KEY }}
-      SUPABASE_EDGE_URL:        https://mpemvvakffinptjyrkzg.supabase.co/functions/v1
-      DOSSAMI_WEBHOOK_SECRET:   ${{ secrets.DOSSAMI_WEBHOOK_SECRET }}
+      SUPABASE_REST_URL:        https://mpemvvakffinptjyrkzg.supabase.co/rest/v1
+      SUPABASE_SERVICE_KEY:     ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       GH_TOKEN:                 ${{ secrets.GITHUB_TOKEN }}
 
     steps:
@@ -77,14 +77,15 @@ jobs:
       - name: Mark video as rendering
         if: ${{ github.event.inputs.video_id != '' }}
         run: |
-          RESP=$(curl -s -w "\n__HTTP_STATUS__:%{http_code}" -X POST "$SUPABASE_EDGE_URL/complete-render" \
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X PATCH \
+            "$SUPABASE_REST_URL/videos?id=eq.${{ github.event.inputs.video_id }}" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
             -H "Content-Type: application/json" \
-            -H "x-webhook-secret: $DOSSAMI_WEBHOOK_SECRET" \
-            -d "{\"video_id\":\"${{ github.event.inputs.video_id }}\",\"status\":\"rendering\"}")
-          echo "Response: $RESP"
-          HTTP_CODE=$(echo "$RESP" | grep '__HTTP_STATUS__' | cut -d: -f2)
-          echo "HTTP status: $HTTP_CODE"
-          [ "$HTTP_CODE" = "200" ] || { echo "❌ complete-render returned $HTTP_CODE"; exit 1; }
+            -H "Prefer: return=minimal" \
+            -d '{"status":"rendering"}')
+          echo "Supabase PATCH status: $HTTP"
+          [ "$HTTP" = "204" ] && echo "✅ Marked rendering" || echo "⚠️ Unexpected status $HTTP"
 
       - name: Generate Dossami voiceover
         if: ${{ github.event.inputs.video_id != '' }}
@@ -167,22 +168,26 @@ jobs:
       - name: Mark video as done
         if: ${{ github.event.inputs.video_id != '' && success() }}
         run: |
-          RESP=$(curl -s -w "\n__HTTP_STATUS__:%{http_code}" -X POST "$SUPABASE_EDGE_URL/complete-render" \
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X PATCH \
+            "$SUPABASE_REST_URL/videos?id=eq.${{ github.event.inputs.video_id }}" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
             -H "Content-Type: application/json" \
-            -H "x-webhook-secret: $DOSSAMI_WEBHOOK_SECRET" \
-            -d "{\"video_id\":\"${{ github.event.inputs.video_id }}\",\"status\":\"done\",\"video_url\":\"${{ steps.upload.outputs.video_url }}\"}")
-          echo "Response: $RESP"
-          HTTP_CODE=$(echo "$RESP" | grep '__HTTP_STATUS__' | cut -d: -f2)
-          echo "HTTP status: $HTTP_CODE"
-          [ "$HTTP_CODE" = "200" ] && echo "✅ Marked done" || echo "⚠️ complete-render returned $HTTP_CODE"
+            -H "Prefer: return=minimal" \
+            -d "{\"status\":\"done\",\"video_url\":\"${{ steps.upload.outputs.video_url }}\"}")
+          echo "Supabase PATCH status: $HTTP"
+          [ "$HTTP" = "204" ] && echo "✅ Marked done" || echo "⚠️ Unexpected status $HTTP"
 
       - name: Mark video as failed
         if: ${{ github.event.inputs.video_id != '' && failure() }}
         run: |
-          curl -s -X POST "$SUPABASE_EDGE_URL/complete-render" \
+          curl -s -o /dev/null -X PATCH \
+            "$SUPABASE_REST_URL/videos?id=eq.${{ github.event.inputs.video_id }}" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
             -H "Content-Type: application/json" \
-            -H "x-webhook-secret: $DOSSAMI_WEBHOOK_SECRET" \
-            -d "{\"video_id\":\"${{ github.event.inputs.video_id }}\",\"status\":\"failed\"}"
+            -H "Prefer: return=minimal" \
+            -d '{"status":"failed"}'
           echo "❌ Marked failed"
 
       # ════════════════════════════════════════════════════════════════════════
