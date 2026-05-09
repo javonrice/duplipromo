@@ -150,9 +150,10 @@ jobs:
         if: ${{ github.event.inputs.video_id != '' }}
         working-directory: video
         run: |
-          ffmpeg -i out/dossami.mp4 -movflags +faststart -c copy out/dossami-web.mp4
-          mv out/dossami-web.mp4 out/dossami.mp4
-          echo "✅ faststart applied"
+          ffmpeg -y -i out/dossami.mp4 -movflags +faststart -c copy out/dossami-web.mp4 \
+            && mv out/dossami-web.mp4 out/dossami.mp4 \
+            && echo "✅ faststart applied" \
+            || echo "⚠️ faststart skipped, using original"
 
       - name: Upload video to GitHub Release
         if: ${{ github.event.inputs.video_id != '' }}
