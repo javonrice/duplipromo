@@ -42,7 +42,7 @@ jobs:
       contents: write
     env:
       ELEVENLABS_API_KEY:   ${{ secrets.ELEVENLABS_API_KEY }}
-      SUPABASE_URL:         https://mpemvvakffinptjyrkzg.supabase.co
+      SUPABASE_EDGE_URL:    https://mpemvvakffinptjyrkzg.supabase.co/functions/v1
       SUPABASE_ANON_KEY:    eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1wZW12dmFrZmZpbnB0anlya3pnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyNzIyNjIsImV4cCI6MjA5Mzg0ODI2Mn0.KiRF4NH5eAgAWjnaT12e_GHOZwU6ozksn056nGVWRxI
       GH_TOKEN:             ${{ secrets.GITHUB_TOKEN }}
 
@@ -77,13 +77,13 @@ jobs:
       - name: Mark video as rendering
         if: ${{ github.event.inputs.video_id != '' }}
         run: |
-          HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$SUPABASE_URL/rest/v1/rpc/update_video_render_status" \
-            -H "apikey: $SUPABASE_ANON_KEY" \
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$SUPABASE_EDGE_URL/trigger-render" \
             -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
             -H "Content-Type: application/json" \
-            -d "{\"p_video_id\":\"${{ github.event.inputs.video_id }}\",\"p_status\":\"rendering\"}")
+            -d "{\"video_id\":\"${{ github.event.inputs.video_id }}\",\"status\":\"rendering\"}")
           echo "HTTP status: $HTTP"
-          [ "$HTTP" = "200" ] && echo "✅ Marked rendering" || { echo "❌ RPC returned $HTTP"; exit 1; }
+          [ "$HTTP" = "200" ] && echo "✅ Marked rendering" || { echo "❌ trigger-render callback returned $HTTP"; exit 1; }
 
       - name: Generate Dossami voiceover
         if: ${{ github.event.inputs.video_id != '' }}
@@ -166,22 +166,22 @@ jobs:
       - name: Mark video as done
         if: ${{ github.event.inputs.video_id != '' && success() }}
         run: |
-          HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$SUPABASE_URL/rest/v1/rpc/update_video_render_status" \
-            -H "apikey: $SUPABASE_ANON_KEY" \
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$SUPABASE_EDGE_URL/trigger-render" \
             -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
             -H "Content-Type: application/json" \
-            -d "{\"p_video_id\":\"${{ github.event.inputs.video_id }}\",\"p_status\":\"done\",\"p_video_url\":\"${{ steps.upload.outputs.video_url }}\"}")
+            -d "{\"video_id\":\"${{ github.event.inputs.video_id }}\",\"status\":\"done\",\"video_url\":\"${{ steps.upload.outputs.video_url }}\"}")
           echo "HTTP status: $HTTP"
-          [ "$HTTP" = "200" ] && echo "✅ Marked done" || echo "⚠️ RPC returned $HTTP"
+          [ "$HTTP" = "200" ] && echo "✅ Marked done" || echo "⚠️ trigger-render callback returned $HTTP"
 
       - name: Mark video as failed
         if: ${{ github.event.inputs.video_id != '' && failure() }}
         run: |
-          curl -s -o /dev/null -X POST "$SUPABASE_URL/rest/v1/rpc/update_video_render_status" \
-            -H "apikey: $SUPABASE_ANON_KEY" \
+          curl -s -o /dev/null -X POST "$SUPABASE_EDGE_URL/trigger-render" \
             -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
             -H "Content-Type: application/json" \
-            -d "{\"p_video_id\":\"${{ github.event.inputs.video_id }}\",\"p_status\":\"failed\"}"
+            -d "{\"video_id\":\"${{ github.event.inputs.video_id }}\",\"status\":\"failed\"}"
           echo "❌ Marked failed"
 
       # ════════════════════════════════════════════════════════════════════════
