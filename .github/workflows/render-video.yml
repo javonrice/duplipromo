@@ -111,17 +111,22 @@ jobs:
         continue-on-error: true
         env:
           DOSSAMI_SCRIPT: ${{ github.event.inputs.script }}
-        run: node scripts/generate-dossami-scenes.mjs
+        run: |
+          echo "🔑 GEMINI_API_KEY set: ${{ secrets.GEMINI_API_KEY != '' }}"
+          echo "📝 Script length: ${#DOSSAMI_SCRIPT} chars"
+          node scripts/generate-dossami-scenes.mjs
 
-      - name: Fallback — empty scenes JSON
+      - name: Debug — scenes JSON
         if: ${{ github.event.inputs.video_id != '' }}
         working-directory: video
         run: |
-          if [ ! -f "public/dossami-scenes.json" ]; then
-            echo "[]" > public/dossami-scenes.json
-            echo "⚠️ Using empty scenes fallback"
+          if [ -f "public/dossami-scenes.json" ]; then
+            echo "✅ dossami-scenes.json exists ($(wc -c < public/dossami-scenes.json) bytes)"
+            echo "Scene count: $(node -e "const d=require('./public/dossami-scenes.json'); console.log(d.length)")"
+            node -e "const d=require('./public/dossami-scenes.json'); d.slice(0,2).forEach((s,i)=>console.log(i+': '+s.sentence+' → '+s.elements.length+' elements'))"
           else
-            echo "✅ Scenes JSON ready ($(wc -c < public/dossami-scenes.json) bytes)"
+            echo "[]" > public/dossami-scenes.json
+            echo "❌ No scenes JSON — Gemini failed. Using empty fallback."
           fi
 
       - name: Render DossamiVideo
@@ -131,7 +136,10 @@ jobs:
           node -e "
             const fs = require('fs');
             let scenes = [];
-            try { scenes = JSON.parse(fs.readFileSync('public/dossami-scenes.json', 'utf8')); } catch(e) {}
+            try {
+              scenes = JSON.parse(fs.readFileSync('public/dossami-scenes.json', 'utf8'));
+              console.log('Loaded', scenes.length, 'scenes');
+            } catch(e) { console.log('No scenes file:', e.message); }
             const props = {
               script: process.env.SCRIPT,
               style:  process.env.STYLE  || 'minimal',
@@ -139,8 +147,9 @@ jobs:
               _scenes: scenes,
             };
             fs.writeFileSync('dossami-props.json', JSON.stringify(props));
+            console.log('Props written, _scenes count:', scenes.length);
           "
-          npx remotion render DossamiVideo out/dossami.mp4 --props=dossami-props.json
+          npx remotion render DossamiVideo out/dossami.mp4 --props=./dossami-props.json
         env:
           SCRIPT: ${{ github.event.inputs.script }}
           STYLE:  ${{ github.event.inputs.style }}
