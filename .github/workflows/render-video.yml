@@ -77,10 +77,14 @@ jobs:
       - name: Mark video as rendering
         if: ${{ github.event.inputs.video_id != '' }}
         run: |
-          curl -s -X POST "$SUPABASE_EDGE_URL/complete-render" \
+          RESP=$(curl -s -w "\n__HTTP_STATUS__:%{http_code}" -X POST "$SUPABASE_EDGE_URL/complete-render" \
             -H "Content-Type: application/json" \
             -H "x-webhook-secret: $DOSSAMI_WEBHOOK_SECRET" \
-            -d "{\"video_id\":\"${{ github.event.inputs.video_id }}\",\"status\":\"rendering\"}"
+            -d "{\"video_id\":\"${{ github.event.inputs.video_id }}\",\"status\":\"rendering\"}")
+          echo "Response: $RESP"
+          HTTP_CODE=$(echo "$RESP" | grep '__HTTP_STATUS__' | cut -d: -f2)
+          echo "HTTP status: $HTTP_CODE"
+          [ "$HTTP_CODE" = "200" ] || { echo "❌ complete-render returned $HTTP_CODE"; exit 1; }
 
       - name: Generate Dossami voiceover
         if: ${{ github.event.inputs.video_id != '' }}
@@ -163,11 +167,14 @@ jobs:
       - name: Mark video as done
         if: ${{ github.event.inputs.video_id != '' && success() }}
         run: |
-          curl -s -X POST "$SUPABASE_EDGE_URL/complete-render" \
+          RESP=$(curl -s -w "\n__HTTP_STATUS__:%{http_code}" -X POST "$SUPABASE_EDGE_URL/complete-render" \
             -H "Content-Type: application/json" \
             -H "x-webhook-secret: $DOSSAMI_WEBHOOK_SECRET" \
-            -d "{\"video_id\":\"${{ github.event.inputs.video_id }}\",\"status\":\"done\",\"video_url\":\"${{ steps.upload.outputs.video_url }}\"}"
-          echo "✅ Marked done"
+            -d "{\"video_id\":\"${{ github.event.inputs.video_id }}\",\"status\":\"done\",\"video_url\":\"${{ steps.upload.outputs.video_url }}\"}")
+          echo "Response: $RESP"
+          HTTP_CODE=$(echo "$RESP" | grep '__HTTP_STATUS__' | cut -d: -f2)
+          echo "HTTP status: $HTTP_CODE"
+          [ "$HTTP_CODE" = "200" ] && echo "✅ Marked done" || echo "⚠️ complete-render returned $HTTP_CODE"
 
       - name: Mark video as failed
         if: ${{ github.event.inputs.video_id != '' && failure() }}
