@@ -4,7 +4,7 @@ import { Composition, CalculateMetadataFunction } from "remotion";
 import { DupliPromo } from "./DupliPromo";
 import { PsychologyVideo } from "./psychology/PsychologyVideo";
 import { HaulVideo } from "./haul/HaulVideo";
-import { DossamiVideo, type DossamiVideoProps, type SceneData } from "./dossami/DossamiVideo";
+import { DossamiVideo, type DossamiVideoProps } from "./dossami/DossamiVideo";
 import { TOTAL_FRAMES, FPS, WIDTH, HEIGHT } from "./brand";
 import { PSYCH_TOTAL } from "./psychology/tokens";
 import { HAUL_TOTAL, HAUL_FPS, HAUL_WIDTH, HAUL_HEIGHT } from "./haul/tokens";
@@ -17,20 +17,13 @@ const dossamiMetadata: CalculateMetadataFunction<any> = async ({ props }) => {
   const p = props as DossamiVideoProps;
   const dims = DOSSAMI_DIMS[p.size] ?? DOSSAMI_DIMS["9:16"];
 
-  // Load AI-generated scene data produced by generate-dossami-scenes.mjs
-  let _scenes: SceneData[] = [];
-  try {
-    const res = await fetch(staticFile("dossami-scenes.json"));
-    if (res.ok) _scenes = await res.json() as SceneData[];
-  } catch { /* no scenes file — component falls back to splitScript */ }
-
   try {
     const secs = await getAudioDurationInSeconds(staticFile("voiceover-dossami.mp3"));
-    return { durationInFrames: Math.ceil(secs * DOSSAMI_FPS), ...dims, props: { ...p, _scenes } };
+    return { durationInFrames: Math.ceil(secs * DOSSAMI_FPS), ...dims };
   } catch {
     const words = (p.script ?? "").trim().split(/\s+/).length;
     const secs = Math.max(5, (words / 150) * 60);
-    return { durationInFrames: Math.ceil(secs * DOSSAMI_FPS), ...dims, props: { ...p, _scenes } };
+    return { durationInFrames: Math.ceil(secs * DOSSAMI_FPS), ...dims };
   }
 };
 

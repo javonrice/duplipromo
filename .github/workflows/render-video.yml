@@ -128,15 +128,19 @@ jobs:
         if: ${{ github.event.inputs.video_id != '' }}
         working-directory: video
         run: |
-          PROPS=$(node -e "
-            const s = JSON.stringify({
+          node -e "
+            const fs = require('fs');
+            let scenes = [];
+            try { scenes = JSON.parse(fs.readFileSync('public/dossami-scenes.json', 'utf8')); } catch(e) {}
+            const props = {
               script: process.env.SCRIPT,
               style:  process.env.STYLE  || 'minimal',
               size:   process.env.SIZE   || '9:16',
-            });
-            process.stdout.write(s);
-          ")
-          npx remotion render DossamiVideo out/dossami.mp4 --props="$PROPS"
+              _scenes: scenes,
+            };
+            fs.writeFileSync('dossami-props.json', JSON.stringify(props));
+          "
+          npx remotion render DossamiVideo out/dossami.mp4 --props=dossami-props.json
         env:
           SCRIPT: ${{ github.event.inputs.script }}
           STYLE:  ${{ github.event.inputs.style }}
